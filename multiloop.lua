@@ -7,6 +7,7 @@ local options = {
 	keybind = "M",
 	message_duration = 1,
 	save_ext = ".mab.tsv",
+	list_font_size = 42,
 }
 
 mpopts.read_options(options, "multiloop")
@@ -200,7 +201,9 @@ local function showPositions()
 	if #positions == 0 then
 		message("No loop entries", duration)
 	else
-		local lines = { "{\\b1}Loop entries{\\b0}" }
+		local lines = {
+			string.format("{\\fs%d\\b1}Loop entries{\\b0}", options.list_font_size),
+		}
 		for index, segment in ipairs(positions) do
 			lines[#lines + 1] = string.format(
 				"%d. %s - %s",
