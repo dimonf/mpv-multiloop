@@ -17,7 +17,7 @@ local ab = {} -- temporary {start} while setting A then B
 local looping = false
 local menu_active = false
 local p_count = 1
-local positions_message_timer = nil
+local positions_list_visible = false
 
 local function file_exists(name)
 	local f = io.open(name, "r")
@@ -35,6 +35,7 @@ local function message(text, duration)
 end
 
 local function drawMenu()
+	positions_list_visible = false
 	local window_w, window_h = mp.get_osd_size()
 	local ass = assdraw.ass_new()
 	ass:new_event()
@@ -52,6 +53,7 @@ local function drawMenu()
 end
 
 local function clearMenu()
+	positions_list_visible = false
 	local window_w, window_h = mp.get_osd_size()
 	mp.set_osd_ass(window_w, window_h, "")
 	mp.osd_message("", 0)
@@ -191,36 +193,35 @@ local function format_time(seconds)
 end
 
 local function showPositions()
-	local duration = math.max(options.message_duration, 5)
-	if positions_message_timer then
-		positions_message_timer:kill()
-		positions_message_timer = nil
+	if positions_list_visible then
+		clearMenu()
+		drawMenu()
+		return
 	end
+
 	clearMenu()
+	local window_w, window_h = mp.get_osd_size()
+	local ass = assdraw.ass_new()
+	ass:new_event()
+	ass:append(string.format("{\\fs%d}", options.list_font_size))
 
 	if #positions == 0 then
-		message("No loop entries", duration)
+		ass:append("{\\b1}Loop entries{\\b0}\\N")
+		ass:append("No loop entries")
 	else
-		local lines = {
-			string.format("{\\fs%d\\b1}Loop entries{\\b0}", options.list_font_size),
-		}
+		ass:append("{\\b1}Loop entries{\\b0}\\N")
 		for index, segment in ipairs(positions) do
-			lines[#lines + 1] = string.format(
-				"%d. %s - %s",
+			ass:append(string.format(
+				"%d. %s - %s\\N",
 				index,
 				format_time(segment[1]),
 				format_time(segment[2])
-			)
+			))
 		end
-		message(table.concat(lines, "\\N"), duration)
 	end
 
-	positions_message_timer = mp.add_timeout(duration, function()
-		positions_message_timer = nil
-		if menu_active and not looping then
-			drawMenu()
-		end
-	end)
+	mp.set_osd_ass(window_w, window_h, ass.text)
+	positions_list_visible = true
 end
 
 local function on_timepos_change()
@@ -325,11 +326,6 @@ local menu_bindings = {
 }
 
 local function deactivate()
-	if positions_message_timer then
-		positions_message_timer:kill()
-		positions_message_timer = nil
-	end
-
 	for _, binding in ipairs(menu_bindings) do
 		mp.remove_key_binding(binding[2])
 	end
