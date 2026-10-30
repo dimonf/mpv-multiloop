@@ -10,6 +10,21 @@ Place `multiloop.lua` in your scripts folder, generally `~/.config/mpv/scripts/`
 The script is activated by the M (shift+m) key. This can be changed by editing the `keybind` variable at the beginning of the file.
 
 Follow the on-screen instructions.
-If you decide to save the A-B points for future use, a file with the same name as the file you are playing and "mab" extension will be created. The points will be restored from this file when activating the script.
+If you save the A-B points, the script creates a JSON sidecar next to the media file. For example, `goor_dis.mp4` uses `goor_dis.mab.json`. The points are restored from this file when activating the script and can be reloaded with `r` after external edits.
+
+```json
+{
+  "version": 2,
+  "mediaFileName": "goor_dis.mp4",
+  "cutSegments": [
+    {
+      "start": 17.28,
+      "end": 20.24,
+      "name": "",
+      "selected": true
+    }
+  ]
+}
+```
 
 ~~Once looping, to exit you'll have to quit mpv.~~

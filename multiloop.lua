@@ -1,18 +1,19 @@
--- multiloop.lua (TSV persistence next to media file) + reload (r)
+-- multiloop.lua (JSON persistence next to media file) + reload (r)
 local mp = require("mp")
 local assdraw = require("mp.assdraw")
 local mpopts = require("mp.options")
+local utils = require("mp.utils")
 
 local options = {
 	keybind = "M",
 	message_duration = 1,
-	save_ext = ".mab.tsv",
+	save_ext = ".mab.json",
 	list_font_size = 42,
 }
 
 mpopts.read_options(options, "multiloop")
 
-local positions = {} -- array of {start, end}
+local positions = {} -- array of {start, end, name, selected}
 local ab = {} -- temporary {start} while setting A then B
 local looping = false
 local menu_active = false
@@ -44,8 +45,8 @@ local function drawMenu()
 	ass:append("{\\b1}1{\\b0} set start time\\N")
 	ass:append("{\\b1}2{\\b0} set end time\\N")
 	ass:append("{\\b1}d{\\b0} duplicate last a-b point\\N")
-	ass:append("{\\b1}s{\\b0} save positions to file (TSV)\\N")
-	ass:append("{\\b1}r{\\b0} reload positions from file (TSV)\\N")
+	ass:append("{\\b1}s{\\b0} save positions to file (JSON)\\N")
+	ass:append("{\\b1}r{\\b0} reload positions from file (JSON)\\N")
 	ass:append("{\\b1}l{\\b0} loop / end loop\\N")
 	ass:append("{\\b1}p{\\b0} show loop entries\\N")
 	ass:append("{\\b1}ESC{\\b0} hide\\N")
@@ -73,7 +74,18 @@ local function get_save_path()
 	return no_ext .. options.save_ext
 end
 
-local function save_positions_tsv()
+local function json_escape(value)
+	return tostring(value):gsub('[%z\1-\31\\"]', function(char)
+		local escapes = { ['"'] = '\\"', ['\\'] = '\\\\', ['\b'] = '\\b', ['\f'] = '\\f', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t' }
+		return escapes[char] or string.format("\\u%04x", char:byte())
+	end)
+end
+
+local function get_media_file_name()
+	return mp.get_property("filename") or ""
+end
+
+local function save_positions_json()
 	local spath = get_save_path()
 	if not spath then
 		message("cannot save: not a local file path")
@@ -86,48 +98,69 @@ local function save_positions_tsv()
 		return false
 	end
 
-	f:write("# multiloop A-B points (start<TAB>end), seconds\n")
+	f:write('{\n  "version": 2,\n')
+	f:write('  "mediaFileName": "' .. json_escape(get_media_file_name()) .. '",\n')
+	f:write('  "cutSegments": [')
+	local written = 0
 	for _, seg in ipairs(positions) do
-		local a, b = seg[1], seg[2]
+		local a, b = seg.start, seg["end"]
 		if type(a) == "number" and type(b) == "number" and b > a then
-			f:write(string.format("%.6f\t%.6f\n", a, b))
+			f:write(written == 0 and "\n" or ",\n")
+			f:write("    {\n")
+			f:write(string.format('      "start": %.15g,\n', a))
+			f:write(string.format('      "end": %.15g,\n', b))
+			f:write('      "name": "' .. json_escape(seg.name or "") .. '",\n')
+			f:write('      "selected": ' .. (seg.selected == false and "false" or "true") .. "\n")
+			f:write("    }")
+			written = written + 1
 		end
 	end
+	f:write("\n  ]\n}\n")
 
 	f:close()
 	message("saved: " .. spath)
 	return true
 end
 
-local function parse_positions_tsv(spath)
+local function parse_positions_json(spath)
 	local f, e = io.open(spath, "r")
 	if not f then
 		return nil, ("open failed: " .. tostring(e))
 	end
 
-	local out = {}
-	for line in f:lines() do
-		if line ~= "" and not line:match("^%s*#") then
-			local a_s, b_s = line:match("^%s*([%d%.%-]+)%s*\t%s*([%d%.%-]+)%s*$")
-			local a = tonumber(a_s)
-			local b = tonumber(b_s)
-			if a and b and b > a then
-				out[#out + 1] = { a, b }
-			end
-		end
+	local contents = f:read("*a")
+	f:close()
+	local data, err = utils.parse_json(contents)
+	if not data then
+		return nil, ("invalid JSON: " .. tostring(err))
+	end
+	if type(data) ~= "table" or data.version ~= 2 or type(data.cutSegments) ~= "table" then
+		return nil, "expected version 2 with a cutSegments array"
 	end
 
-	f:close()
+	local out = {}
+	for _, seg in ipairs(data.cutSegments) do
+		local a = tonumber(seg.start)
+		local b = tonumber(seg["end"])
+		if a and b and b > a then
+			out[#out + 1] = {
+				start = a,
+				["end"] = b,
+				name = type(seg.name) == "string" and seg.name or "",
+				selected = seg.selected ~= false,
+			}
+		end
+	end
 	return out, nil
 end
 
-local function load_positions_tsv()
+local function load_positions_json()
 	local spath = get_save_path()
 	if not spath or not file_exists(spath) then
 		return false
 	end
 
-	local out, err = parse_positions_tsv(spath)
+	local out, err = parse_positions_json(spath)
 	if not out then
 		message("load failed: " .. tostring(err))
 		return false
@@ -153,7 +186,7 @@ local function setEndTime()
 		local end_time = mp.get_property_number("time-pos")
 		local start_time = ab[1]
 		if end_time and start_time and end_time > start_time then
-			positions[#positions + 1] = { start_time, end_time }
+			positions[#positions + 1] = { start = start_time, ["end"] = end_time, name = "", selected = true }
 			ab = {}
 			message("end time set")
 		else
@@ -171,7 +204,7 @@ local function duplicateLastPoint()
 		return
 	end
 	local last = positions[#positions]
-	positions[#positions + 1] = { last[1], last[2] }
+	positions[#positions + 1] = { start = last.start, ["end"] = last["end"], name = last.name, selected = last.selected }
 	message("point duplicated!")
 end
 
@@ -181,7 +214,7 @@ local function savePositions()
 	elseif #positions == 0 then
 		message("nothing to save")
 	else
-		save_positions_tsv()
+		save_positions_json()
 	end
 end
 
@@ -214,8 +247,8 @@ local function showPositions()
 			ass:append(string.format(
 				"%d. %s - %s\\N",
 				index,
-				format_time(segment[1]),
-				format_time(segment[2])
+				format_time(segment.start),
+				format_time(segment["end"])
 			))
 		end
 	end
@@ -234,23 +267,23 @@ local function on_timepos_change()
 	end
 
 	local seg = positions[p_count]
-	if not seg or not seg[2] then
+	if not seg or not seg["end"] then
 		return
 	end
 
-	if t >= seg[2] then
+	if t >= seg["end"] then
 		if p_count ~= #positions then
 			p_count = p_count + 1
 		else
 			p_count = 1
 		end
-		mp.set_property_native("time-pos", positions[p_count][1])
+		mp.set_property_native("time-pos", positions[p_count].start)
 	end
 end
 
 local function start_looping_if_possible()
 	if #positions ~= 0 then
-		mp.set_property_native("time-pos", positions[p_count][1])
+		mp.set_property_native("time-pos", positions[p_count].start)
 		mp.observe_property("time-pos", "string", on_timepos_change)
 	else
 		message("you have to set some points first!")
@@ -274,7 +307,7 @@ local function loop()
 	end
 end
 
--- Reload positions from TSV on disk (so you can edit it externally).
+-- Reload positions from JSON on disk (so you can edit it externally).
 -- Keeps looping state: if looping, re-start observer and seek to new first segment.
 local function reloadPositions()
 	local spath = get_save_path()
@@ -287,7 +320,7 @@ local function reloadPositions()
 		return
 	end
 
-	local out, err = parse_positions_tsv(spath)
+	local out, err = parse_positions_json(spath)
 	if not out then
 		message("reload failed: " .. tostring(err))
 		return
@@ -344,7 +377,7 @@ local function activate()
 		mp.add_forced_key_binding(binding[1], binding[2], binding[3])
 	end
 
-	load_positions_tsv()
+	load_positions_json()
 	menu_active = true
 	drawMenu()
 end
