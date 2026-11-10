@@ -21,6 +21,14 @@ local menu_active = false
 local p_count = 1
 local positions_list_visible = false
 local stop_looping
+local deletePositionByIndex
+local toggleSelectedByIndex
+
+local function removeListBindings()
+	mp.remove_key_binding("multiloop-delete")
+	mp.remove_key_binding("multiloop-toggle-selected-space")
+	mp.remove_key_binding("multiloop-toggle-selected-m")
+end
 
 local function file_exists(name)
 	local f = io.open(name, "r")
@@ -38,6 +46,7 @@ local function message(text, duration)
 end
 
 local function drawMenu()
+	removeListBindings()
 	positions_list_visible = false
 	local window_w, window_h = mp.get_osd_size()
 	local ass = assdraw.ass_new()
@@ -58,6 +67,7 @@ local function drawMenu()
 end
 
 local function clearMenu()
+	removeListBindings()
 	positions_list_visible = false
 	local window_w, window_h = mp.get_osd_size()
 	mp.set_osd_ass(window_w, window_h, "")
@@ -190,7 +200,7 @@ local function setEndTime()
 		local end_time = mp.get_property_number("time-pos")
 		local start_time = ab[1]
 		if end_time and start_time and end_time > start_time then
-			positions[#positions + 1] = { start = start_time, ["end"] = end_time, name = "", selected = true }
+			positions[#positions + 1] = { start = start_time, ["end"] = end_time, name = "", selected = false }
 			ab = {}
 			message("end time set")
 		else
@@ -237,22 +247,27 @@ local function drawPositionsList()
 	ass:append(string.format("{\\fs%d}", options.list_font_size))
 	ass:append("{\\b1}Loop entries{\\b0}\\N")
 	ass:append("{\\b1}x{\\b0} delete entry by index\\N\\N")
+	ass:append("{\\b1}SPACE / m{\\b0} toggle selected by index\\N\\N")
 
 	if #positions == 0 then
 		ass:append("No loop entries")
 	else
 		for index, segment in ipairs(positions) do
 			ass:append(string.format(
-				"%d. %s - %s\\N",
+				"%d. %s - %s%s\\N",
 				index,
 				format_time(segment.start),
-				format_time(segment["end"])
+				format_time(segment["end"]),
+				segment.selected and " *" or ""
 			))
 		end
 	end
 
 	mp.set_osd_ass(window_w, window_h, ass.text)
 	positions_list_visible = true
+	mp.add_forced_key_binding("x", "multiloop-delete", deletePositionByIndex)
+	mp.add_forced_key_binding("SPACE", "multiloop-toggle-selected-space", toggleSelectedByIndex)
+	mp.add_forced_key_binding("m", "multiloop-toggle-selected-m", toggleSelectedByIndex)
 end
 
 local function showPositions()
@@ -264,7 +279,7 @@ local function showPositions()
 	end
 end
 
-local function deletePositionByIndex()
+deletePositionByIndex = function()
 	if not positions_list_visible then
 		return
 	end
@@ -295,6 +310,32 @@ local function deletePositionByIndex()
 				end
 			elseif p_count > #positions then
 				p_count = #positions
+			end
+			drawPositionsList()
+		end,
+	})
+end
+
+toggleSelectedByIndex = function()
+	if not positions_list_visible or #positions == 0 then
+		return
+	end
+
+	input.get({
+		prompt = "Toggle selected entry index: ",
+		submit = function(text)
+			local index = tonumber(text)
+			if not index or index ~= math.floor(index) or index < 1 or index > #positions then
+				message("Invalid loop entry index")
+				return
+			end
+
+			local segment = positions[index]
+			local previous = segment.selected
+			segment.selected = not segment.selected
+			if not save_positions_json() then
+				segment.selected = previous
+				return
 			end
 			drawPositionsList()
 		end,
@@ -414,7 +455,6 @@ local menu_bindings = {
 	{ "1", "multiloop-set-a", setStartTime },
 	{ "2", "multiloop-set-b", setEndTime },
 	{ "d", "multiloop-dup", duplicateLastPoint },
-	{ "x", "multiloop-delete", deletePositionByIndex },
 	{ "s", "multiloop-save", savePositions },
 	{ "r", "multiloop-reload", reloadPositions },
 	{ "l", "multiloop-loop", loop },
