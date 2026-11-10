@@ -236,7 +236,7 @@ local function drawPositionsList()
 	ass:new_event()
 	ass:append(string.format("{\\fs%d}", options.list_font_size))
 	ass:append("{\\b1}Loop entries{\\b0}\\N")
-	ass:append("{\\b1}d{\\b0} delete entry by index\\N\\N")
+	ass:append("{\\b1}x{\\b0} delete entry by index\\N\\N")
 
 	if #positions == 0 then
 		ass:append("No loop entries")
@@ -266,7 +266,6 @@ end
 
 local function deletePositionByIndex()
 	if not positions_list_visible then
-		duplicateLastPoint()
 		return
 	end
 
@@ -414,7 +413,8 @@ end
 local menu_bindings = {
 	{ "1", "multiloop-set-a", setStartTime },
 	{ "2", "multiloop-set-b", setEndTime },
-	{ "d", "multiloop-delete-or-duplicate", deletePositionByIndex },
+	{ "d", "multiloop-dup", duplicateLastPoint },
+	{ "x", "multiloop-delete", deletePositionByIndex },
 	{ "s", "multiloop-save", savePositions },
 	{ "r", "multiloop-reload", reloadPositions },
 	{ "l", "multiloop-loop", loop },
