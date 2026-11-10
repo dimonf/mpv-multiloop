@@ -200,7 +200,7 @@ local function setEndTime()
 		local end_time = mp.get_property_number("time-pos")
 		local start_time = ab[1]
 		if end_time and start_time and end_time > start_time then
-			positions[#positions + 1] = { start = start_time, ["end"] = end_time, name = "", selected = false }
+			positions[#positions + 1] = { start = start_time, ["end"] = end_time, name = "", selected = true }
 			ab = {}
 			message("end time set")
 		else
@@ -279,6 +279,12 @@ local function showPositions()
 	end
 end
 
+local function firstSelectedIndex()
+	for index, segment in ipairs(positions) do
+		if segment.selected then return index end
+	end
+end
+
 deletePositionByIndex = function()
 	if not positions_list_visible then
 		return
@@ -311,6 +317,16 @@ deletePositionByIndex = function()
 			elseif p_count > #positions then
 				p_count = #positions
 			end
+			if looping then
+				local selected_index = firstSelectedIndex()
+				if selected_index then
+					p_count = selected_index
+					mp.set_property_native("time-pos", positions[p_count].start)
+				else
+					looping = false
+					stop_looping()
+				end
+			end
 			drawPositionsList()
 		end,
 	})
@@ -336,6 +352,16 @@ toggleSelectedByIndex = function()
 			if not save_positions_json() then
 				segment.selected = previous
 				return
+			end
+			if looping then
+				local selected_index = firstSelectedIndex()
+				if selected_index then
+					p_count = selected_index
+					mp.set_property_native("time-pos", positions[p_count].start)
+				else
+					looping = false
+					stop_looping()
+				end
 			end
 			drawPositionsList()
 		end,
@@ -376,22 +402,29 @@ local function on_timepos_change()
 	end
 
 	if t >= seg["end"] then
-		if p_count ~= #positions then
-			p_count = p_count + 1
-		else
-			p_count = 1
+		local next_index = p_count
+		repeat
+			next_index = next_index == #positions and 1 or next_index + 1
+		until positions[next_index].selected or next_index == p_count
+		if positions[next_index].selected then
+			p_count = next_index
+			mp.set_property_native("time-pos", positions[p_count].start)
 		end
-		mp.set_property_native("time-pos", positions[p_count].start)
 	end
 end
 
 local function start_looping_if_possible()
-	if #positions ~= 0 then
+	local first_selected = firstSelectedIndex()
+
+	if first_selected then
+		p_count = first_selected
 		mp.set_property_native("time-pos", positions[p_count].start)
 		mp.observe_property("time-pos", "string", on_timepos_change)
+		return true
 	else
-		message("you have to set some points first!")
+		message("you have to select some points first!")
 		drawMenu()
+		return false
 	end
 end
 
@@ -403,7 +436,9 @@ local function loop()
 	if not looping then
 		looping = true
 		clearMenu()
-		start_looping_if_possible()
+		if not start_looping_if_possible() then
+			looping = false
+		end
 	else
 		looping = false
 		stop_looping()
@@ -436,8 +471,7 @@ local function reloadPositions()
 
 	if looping then
 		stop_looping()
-		if #positions > 0 then
-			start_looping_if_possible()
+		if start_looping_if_possible() then
 			message("reloaded (" .. tostring(#positions) .. " segments)")
 		else
 			-- nothing to loop; stop looping mode

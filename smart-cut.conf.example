@@ -1,0 +1,13 @@
+# Copy this file to ~/.config/mpv/script-opts/smart-cut.conf
+
+# Required. Relative paths are resolved next to the input media file.
+output_file=~/Downloads/out.mkv
+
+# Optional.
+keybind=Ctrl+Alt+c
+crf=18
+preset=medium
+audio_bitrate=192k
+# ffmpeg=ffmpeg
+# ffprobe=ffprobe
+# exiftool=exiftool
