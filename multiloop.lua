@@ -1,6 +1,7 @@
 -- multiloop.lua (JSON persistence next to media file) + reload (r)
 local mp = require("mp")
 local assdraw = require("mp.assdraw")
+local input = require("mp.input")
 local mpopts = require("mp.options")
 local utils = require("mp.utils")
 
@@ -19,6 +20,7 @@ local looping = false
 local menu_active = false
 local p_count = 1
 local positions_list_visible = false
+local stop_looping
 
 local function file_exists(name)
 	local f = io.open(name, "r")
@@ -40,6 +42,7 @@ local function drawMenu()
 	local window_w, window_h = mp.get_osd_size()
 	local ass = assdraw.ass_new()
 	ass:new_event()
+	ass:append(string.format("{\\fs%d}", options.list_font_size))
 	ass:append(" \\N\\N")
 	ass:append("{\\b1}Multiloop{\\b0}\\N")
 	ass:append("{\\b1}1{\\b0} set start time\\N")
@@ -49,6 +52,7 @@ local function drawMenu()
 	ass:append("{\\b1}r{\\b0} reload positions from file (JSON)\\N")
 	ass:append("{\\b1}l{\\b0} loop / end loop\\N")
 	ass:append("{\\b1}p{\\b0} show loop entries\\N")
+	ass:append("{\\b1}- / +{\\b0} decrease / increase OSD font size\\N")
 	ass:append("{\\b1}ESC{\\b0} hide\\N")
 	mp.set_osd_ass(window_w, window_h, ass.text)
 end
@@ -225,24 +229,18 @@ local function format_time(seconds)
 	return string.format("%02d:%02d:%06.3f", hours, minutes, secs)
 end
 
-local function showPositions()
-	if positions_list_visible then
-		clearMenu()
-		drawMenu()
-		return
-	end
-
+local function drawPositionsList()
 	clearMenu()
 	local window_w, window_h = mp.get_osd_size()
 	local ass = assdraw.ass_new()
 	ass:new_event()
 	ass:append(string.format("{\\fs%d}", options.list_font_size))
+	ass:append("{\\b1}Loop entries{\\b0}\\N")
+	ass:append("{\\b1}d{\\b0} delete entry by index\\N\\N")
 
 	if #positions == 0 then
-		ass:append("{\\b1}Loop entries{\\b0}\\N")
 		ass:append("No loop entries")
 	else
-		ass:append("{\\b1}Loop entries{\\b0}\\N")
 		for index, segment in ipairs(positions) do
 			ass:append(string.format(
 				"%d. %s - %s\\N",
@@ -255,6 +253,72 @@ local function showPositions()
 
 	mp.set_osd_ass(window_w, window_h, ass.text)
 	positions_list_visible = true
+end
+
+local function showPositions()
+	if positions_list_visible then
+		clearMenu()
+		drawMenu()
+	else
+		drawPositionsList()
+	end
+end
+
+local function deletePositionByIndex()
+	if not positions_list_visible then
+		duplicateLastPoint()
+		return
+	end
+
+	if #positions == 0 then
+		message("No loop entries")
+		return
+	end
+
+	input.get({
+		prompt = "Delete loop entry index: ",
+		submit = function(text)
+			local index = tonumber(text)
+			if not index or index ~= math.floor(index) or index < 1 or index > #positions then
+				message("Invalid loop entry index")
+				return
+			end
+
+			table.remove(positions, index)
+			if index < p_count then
+				p_count = p_count - 1
+			end
+			if #positions == 0 then
+				p_count = 1
+				if looping then
+					looping = false
+					stop_looping()
+				end
+			elseif p_count > #positions then
+				p_count = #positions
+			end
+			drawPositionsList()
+		end,
+	})
+end
+
+local function changeFontSize(delta)
+	local showing_positions = positions_list_visible
+	options.list_font_size = math.max(12, math.min(120, options.list_font_size + delta))
+
+	if showing_positions then
+		drawPositionsList()
+	else
+		drawMenu()
+	end
+end
+
+local function decreaseFontSize()
+	changeFontSize(-4)
+end
+
+local function increaseFontSize()
+	changeFontSize(4)
 end
 
 local function on_timepos_change()
@@ -291,7 +355,7 @@ local function start_looping_if_possible()
 	end
 end
 
-local function stop_looping()
+stop_looping = function()
 	mp.unobserve_property(on_timepos_change)
 end
 
@@ -350,11 +414,13 @@ end
 local menu_bindings = {
 	{ "1", "multiloop-set-a", setStartTime },
 	{ "2", "multiloop-set-b", setEndTime },
-	{ "d", "multiloop-dup", duplicateLastPoint },
+	{ "d", "multiloop-delete-or-duplicate", deletePositionByIndex },
 	{ "s", "multiloop-save", savePositions },
 	{ "r", "multiloop-reload", reloadPositions },
 	{ "l", "multiloop-loop", loop },
 	{ "p", "multiloop-show-positions", showPositions },
+	{ "-", "multiloop-font-decrease", decreaseFontSize },
+	{ "+", "multiloop-font-increase", increaseFontSize },
 	{ "ESC", "multiloop-hide", clearMenu },
 }
 
