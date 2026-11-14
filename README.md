@@ -10,7 +10,7 @@ Place `multiloop.lua` in your scripts folder, generally `~/.config/mpv/scripts/`
 The script is activated by the M (shift+m) key. This can be changed by editing the `keybind` variable at the beginning of the file.
 
 Follow the on-screen instructions.
-If you save the A-B points, the script creates a JSON sidecar next to the media file. For example, `goor_dis.mp4` uses `goor_dis.mab.json`. The points are restored from this file when activating the script and can be reloaded with `r` after external edits.
+If you save the A-B points, the script creates a JSON sidecar in the same directory as the media file, replacing its extension with `.json`. For example, `goor_dis.mp4` uses `goor_dis.json`. The points are restored from this file when activating the script and can be reloaded with `r` after external edits.
 New entries are selected by default, and loop playback visits only selected entries.
 
 ```json

@@ -8,7 +8,7 @@ local utils = require("mp.utils")
 local options = {
 	keybind = "M",
 	message_duration = 1,
-	save_ext = ".mab.json",
+	save_ext = ".json",
 	list_font_size = 42,
 }
 
